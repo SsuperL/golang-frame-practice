@@ -1,4 +1,4 @@
-package ccache
+package lru
 
 import (
 	"testing"

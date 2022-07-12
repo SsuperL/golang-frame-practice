@@ -1,10 +1,10 @@
-package ccache
+package lru
 
 import "container/list"
 
 // Cache structure to implement LRU
 /*
-LRU(least Recently Used)
+LRU(least Recently Used) lru缓存淘汰策略
 维护一个队列，如果记录被访问了，则移至队尾，队首的元素是最近最少访问的，可以被移除
 */
 type Cache struct {
