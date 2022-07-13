@@ -1,11 +1,27 @@
 package main
 
-import "fmt"
+import (
+	"ccache"
+	"log"
+	"net/http"
+)
+
+var db = map[string]string{
+	"A": "A",
+	"B": "B",
+	"C": "C",
+}
 
 func main() {
-	a := []int{1, 2}
-	b := a
-	a[0] = 100
-	fmt.Println(a)
-	fmt.Println(b)
+	ccache.NewGroup("source", 2<<10, ccache.GetterFunc(func(key string) ([]byte, error) {
+		if v, ok := db[key]; ok {
+			return []byte(v), nil
+		}
+		return nil, nil
+	}))
+
+	addr := ":9090"
+	peers := ccache.NewHTTPPool(addr)
+	log.Println("ccache is running at: ", addr)
+	log.Fatal(http.ListenAndServe(addr, peers))
 }
