@@ -4,26 +4,52 @@
 package ccache
 
 import (
+	"ccache/consistenthash"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 // HTTPPool ...
 type HTTPPool struct {
 	self string
 	// 前缀路径
-	basePath string
+	basePath    string
+	mu          sync.Mutex             // guards
+	peers       *consistenthash.Map    //节点列表
+	httpGetters map[string]*httpGetter //映射节点和路径关系（baseURL前缀）
+	opts        HTTPPoolOptions
 }
 
-const defaultBasePath = "/ccache/"
+// HTTP客户端
+type httpGetter struct {
+	baseURL string // e.g http://localhost:8080
+}
 
-func NewHTTPPool(self string) *HTTPPool {
-	return &HTTPPool{
-		self:     self,
-		basePath: defaultBasePath,
+const (
+	defaultBasePath = "/ccache/"
+	defaultReplicas = 3
+)
+
+type HTTPPoolOptions struct {
+	replicas int
+}
+
+func NewHTTPPoolWithOpts(self string, opts HTTPPoolOptions) *HTTPPool {
+	hp := &HTTPPool{
+		self:        self,
+		basePath:    defaultBasePath,
+		httpGetters: make(map[string]*httpGetter),
 	}
+	if opts.replicas == 0 {
+		hp.opts.replicas = defaultReplicas
+	}
+
+	return hp
 }
 
 func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,3 +86,56 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *HTTPPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
 }
+
+func (h *httpGetter) Get(group string, key string) ([]byte, error) {
+	url := fmt.Sprintf("%v%v/%v", h.baseURL, url.QueryEscape(group), url.QueryEscape(key))
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server response status:%v", res.Status)
+	}
+
+	bytes, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body:%v", err)
+	}
+
+	return bytes, nil
+}
+
+var _ PeerGetter = (*httpGetter)(nil)
+
+// Set 更新远程节点
+func (p *HTTPPool) Set(peers ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.peers = consistenthash.NewMap(p.opts.replicas, nil)
+	// 映射节点和getter关系
+	p.peers.Add(peers...)
+	for _, peer := range peers {
+		p.httpGetters[peer] = &httpGetter{baseURL: peer + p.basePath}
+	}
+}
+
+// PickPeer pick a peer
+func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.peers == nil {
+		return nil, false
+	}
+	if peer := p.peers.Get(key); peer != "" && peer != p.self {
+		return p.httpGetters[peer], true
+	}
+
+	return nil, false
+}
+
+var _ PeerPicker = (*HTTPPool)(nil)

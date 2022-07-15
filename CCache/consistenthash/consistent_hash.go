@@ -1,4 +1,4 @@
-package ccache
+package consistenthash
 
 import (
 	"hash/crc32"

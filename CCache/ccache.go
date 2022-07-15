@@ -20,6 +20,7 @@ type Group struct {
 	// callback when not hit cache
 	getter    Getter
 	mainCache cache
+	peers     PeerPicker
 }
 
 var (
@@ -84,10 +85,31 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 	return value, nil
 }
 
-func (g *Group) load(key string) (ByteView, error) {
+func (g *Group) load(key string) (value ByteView, err error) {
+	// 从远程节点获取值
+	if peer, ok := g.peers.PickPeer(key); ok {
+		value, err = g.getFromPeer(peer, key)
+		return
+	}
 	return g.getLocally(key)
 }
 
 func (g *Group) populateCache(key string, value ByteView) {
 	g.mainCache.add(key, value)
+}
+
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	if g.peers != nil {
+		panic("register peers called more than once")
+	}
+	g.peers = peers
+}
+
+func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	value, err := peer.Get(g.name, key)
+	if err != nil {
+		log.Println("get value from peer failed")
+		return ByteView{}, err
+	}
+	return ByteView{value}, nil
 }
