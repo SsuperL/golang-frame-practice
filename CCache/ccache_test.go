@@ -13,6 +13,12 @@ var db = map[string]string{
 	"C": "C",
 }
 
+type peer struct{}
+
+func (p *peer) Get(key string) ([]byte, error) {
+	return []byte(db[key]), nil
+}
+
 func TestGetterFunc(t *testing.T) {
 	var f Getter = GetterFunc(func(key string) ([]byte, error) {
 		return []byte(key), nil

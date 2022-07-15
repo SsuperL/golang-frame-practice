@@ -19,7 +19,7 @@ func createGroup() *ccache.Group {
 		if v, ok := db[key]; ok {
 			return []byte(v), nil
 		}
-		return []byte(fmt.Sprintf("%s not exists", key)), nil
+		return []byte(fmt.Sprintf("%s not exists \n", key)), nil
 	}))
 }
 

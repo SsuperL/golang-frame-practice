@@ -8,8 +8,8 @@ go build -o server
 
 sleep 2
 echo ">>> start test"
-curl "http://localhost:9090/api?key=Tom" &
-curl "http://localhost:9090/api?key=Tom" &
-curl "http://localhost:9090/api?key=Tom" &
+curl "http://localhost:9090/api?key=A" &
+curl "http://localhost:9090/api?key=A" &
+curl "http://localhost:9090/api?key=A" &
 
 wait

@@ -1,6 +1,7 @@
 package ccache
 
 import (
+	"ccache/singleflight"
 	"log"
 	"sync"
 )
@@ -21,6 +22,7 @@ type Group struct {
 	getter    Getter
 	mainCache cache
 	peers     PeerPicker
+	loadGroup *singleflight.Group
 }
 
 var (
@@ -44,6 +46,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes},
+		loadGroup: &singleflight.Group{},
 	}
 
 	groups[name] = g
@@ -61,14 +64,21 @@ func GetGroup(name string) *Group {
 }
 
 // Get value from cache if exists, else get value from other resources using callback function
-func (g *Group) Get(key string) (ByteView, error) {
-	v, ok := g.mainCache.get(key)
-	if ok {
-		log.Println("Cache hit")
-		return v, nil
-	} else {
+func (g *Group) Get(key string) (value ByteView, err error) {
+	viewi, err := g.loadGroup.Do(key, func() (interface{}, error) {
+		if v, ok := g.mainCache.get(key); ok {
+			log.Println("Cache hit")
+			return v, nil
+		}
 		return g.load(key)
+	})
+
+	if err == nil {
+		return viewi.(ByteView), err
 	}
+
+	return
+
 }
 
 // 单机调用
