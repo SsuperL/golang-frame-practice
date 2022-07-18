@@ -1,8 +1,12 @@
 package ccache
 
+import (
+	"ccache/ccachepb"
+)
+
 // PeerGetter ...
 type PeerGetter interface {
-	Get(group string, key string) ([]byte, error)
+	Get(*ccachepb.Request) (*ccachepb.Response, error)
 }
 
 // PeerPicker ...

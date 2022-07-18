@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package ccachepb;
+option go_package="./;ccachepb";
+
+
+message Request{
+    string group =1;
+    string key =2;
+}
+
+message Response{
+    bytes value =1;
+}

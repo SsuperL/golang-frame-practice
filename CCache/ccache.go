@@ -1,9 +1,13 @@
 package ccache
 
 import (
+	"ccache/ccachepb"
 	"ccache/singleflight"
+	"fmt"
 	"log"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // Getter 缓存未命中时，获取源数据的回调函数，暴露给用户自定义，可定义多个适配器
@@ -116,10 +120,19 @@ func (g *Group) RegisterPeers(peers PeerPicker) {
 }
 
 func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
-	value, err := peer.Get(g.name, key)
+	req := &ccachepb.Request{
+		Group: g.name,
+		Key:   key,
+	}
+	value, err := peer.Get(req)
 	if err != nil {
 		log.Println("get value from peer failed")
 		return ByteView{}, err
 	}
-	return ByteView{value}, nil
+
+	bytes, err := proto.Marshal(value)
+	if err != nil {
+		return ByteView{}, fmt.Errorf("marshal proto msg err: %v", err)
+	}
+	return ByteView{bytes}, nil
 }

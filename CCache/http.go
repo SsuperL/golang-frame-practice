@@ -4,6 +4,7 @@
 package ccache
 
 import (
+	"ccache/ccachepb"
 	"ccache/consistenthash"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // HTTPPool ...
@@ -78,8 +81,14 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write(value.ByteSlice())
+	response, err := proto.Marshal(&ccachepb.Response{Value: value.ByteSlice()})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Write(response)
 
 }
 
@@ -87,8 +96,8 @@ func (p *HTTPPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
 }
 
-func (h *httpGetter) Get(group string, key string) ([]byte, error) {
-	url := fmt.Sprintf("%v%v/%v", h.baseURL, url.QueryEscape(group), url.QueryEscape(key))
+func (h *httpGetter) Get(req *ccachepb.Request) (response *ccachepb.Response, err error) {
+	url := fmt.Sprintf("%v%v/%v", h.baseURL, url.QueryEscape(req.GetGroup()), url.QueryEscape(req.GetKey()))
 	res, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -105,7 +114,11 @@ func (h *httpGetter) Get(group string, key string) ([]byte, error) {
 		return nil, fmt.Errorf("reading response body:%v", err)
 	}
 
-	return bytes, nil
+	err = proto.Unmarshal(bytes, response)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal to proto error: %v", err)
+	}
+	return
 }
 
 var _ PeerGetter = (*httpGetter)(nil)
