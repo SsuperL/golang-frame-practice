@@ -1,23 +1,30 @@
+// Package session ...
+// 与数据库进行交互
 package session
 
 import (
 	"database/sql"
+	"sorm/dialect"
 	"sorm/logger"
+	"sorm/schema"
 	"strings"
 )
 
 // Session session of the database
 type Session struct {
-	db  *sql.DB
-	sql strings.Builder
+	db       *sql.DB
+	dialect  dialect.Dialector
+	refTable *schema.Schema
+	sql      strings.Builder
 	// sql占位符对应的值
 	sqlVars []interface{}
 }
 
 // New initiate db session
-func New(db *sql.DB) *Session {
+func New(db *sql.DB, dialect dialect.Dialector) *Session {
 	return &Session{
-		db: db,
+		db:      db,
+		dialect: dialect,
 	}
 }
 

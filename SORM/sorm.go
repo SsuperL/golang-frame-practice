@@ -2,6 +2,8 @@ package sorm
 
 import (
 	"database/sql"
+	"sorm/dialect"
+	"sorm/logger"
 	"sorm/session"
 
 	log "sorm/logger"
@@ -9,23 +11,29 @@ import (
 
 // Engine entry of orm framework
 type Engine struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect dialect.Dialector
 }
 
 // NewEngine create an engine
-func NewEngine(driver, source string) (*Engine, error) {
+func NewEngine(driver, source string) (engine *Engine, err error) {
 	db, err := sql.Open(driver, source)
 	if err != nil {
 		log.Error(err)
-		return nil, err
+		return
 	}
 
 	if err = db.Ping(); err != nil {
 		log.Error("cannot connect to database")
-		return nil, err
+		return
 	}
 
-	engine := &Engine{db: db}
+	dialect, ok := dialect.GetDialect(driver)
+	if !ok {
+		logger.Errorf("dialect %s not found", driver)
+		return
+	}
+	engine = &Engine{db: db, dialect: dialect}
 	log.Info("Connecting to database successfully")
 
 	return engine, nil
@@ -33,7 +41,7 @@ func NewEngine(driver, source string) (*Engine, error) {
 
 // NewSession create a session
 func (engine *Engine) NewSession() *session.Session {
-	return session.New(engine.db)
+	return session.New(engine.db, engine.dialect)
 }
 
 // Close close session
