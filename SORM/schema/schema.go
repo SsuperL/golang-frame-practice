@@ -64,3 +64,14 @@ func Parse(dest interface{}, dialector dialect.Dialector) *Schema {
 	}
 	return schema
 }
+
+// RecordValues 将orm映射中session.Insert(&User{"Tom",12},&User{"Bob",15})的值
+// 转换为("Tom","Bob"),(12,15) 形式
+func (s *Schema) RecordValues(dest interface{}) []interface{} {
+	destValue := reflect.Indirect(reflect.ValueOf(dest))
+	var fieldValues []interface{}
+	for _, field := range s.Fields {
+		fieldValues = append(fieldValues, destValue.FieldByName(field.Name).Interface())
+	}
+	return fieldValues
+}

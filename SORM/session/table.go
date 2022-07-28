@@ -37,20 +37,20 @@ func (s *Session) CreateTable() error {
 	}
 
 	desc := strings.Join(columns, ",")
-	_, err := s.db.Exec(`CREATE TABLE %s (%s) `, table.Name, desc)
+	_, err := s.Raw(fmt.Sprintf("CREATE TABLE %s (%s);", table.Name, desc)).Exec()
 	return err
 }
 
 // DropTable drop a table
 func (s *Session) DropTable() error {
-	_, err := s.db.Exec(`DROP TABLE %s`, s.refTable.Name)
+	_, err := s.Raw(fmt.Sprintf("DROP TABLE %s", s.refTable.Name)).Exec()
 	return err
 }
 
 // HasTable check if table exists
 func (s *Session) HasTable(tableName string) bool {
 	sql, args := s.dialect.TableExistsSQL(tableName)
-	row := s.db.QueryRow(sql, args...)
+	row := s.Raw(sql, args...).QueryRow()
 	var tmp string
 	_ = row.Scan(&tmp)
 	return tmp == s.GetRefTable().Name

@@ -36,7 +36,7 @@ func (s *sqlite3) ConvertTypeTo(typ reflect.Value) string {
 // TableExistsSQL 判断是否存在table的sql语句
 func (s *sqlite3) TableExistsSQL(tableName string) (string, []interface{}) {
 	args := []interface{}{tableName}
-	sql := "SELECT * FROM sqlite_master WHERE TYPE= 'table' AND name= ?"
+	sql := "SELECT name FROM sqlite_master WHERE TYPE= 'table' AND name= ?;"
 
 	return sql, args
 }
