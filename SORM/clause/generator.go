@@ -19,6 +19,9 @@ func init() {
 	generators[WHERE] = _where
 	generators[LIMIT] = _limit
 	generators[ORDERBY] = _orderBy
+	generators[UPDATE] = _update
+	generators[DELETE] = _delete
+	generators[COUNT] = _count
 }
 
 func genBindVars(num int) string {
@@ -68,7 +71,7 @@ func _values(values ...interface{}) (string, []interface{}) {
 func _limit(values ...interface{}) (string, []interface{}) {
 	// LIMIT ?
 	limit := values[0]
-	return fmt.Sprintf("LIMIT %s", limit), []interface{}{}
+	return fmt.Sprintf("LIMIT %d", limit), []interface{}{}
 }
 
 func _orderBy(values ...interface{}) (string, []interface{}) {
@@ -80,4 +83,34 @@ func _where(values ...interface{}) (string, []interface{}) {
 	// WHERE desc
 	desc, vars := values[0], values[1:]
 	return fmt.Sprintf("WHERE %s", desc), vars
+}
+
+func _update(values ...interface{}) (string, []interface{}) {
+	// 接收参数是map类型的键值对
+	// UPDATE $tableName SET
+	var sql strings.Builder
+	sql.WriteString(fmt.Sprintf("UPDATE %s ", values[0]))
+	sql.WriteString("SET ")
+	items := values[1].(map[string]interface{})
+	var keys []string
+	var vars []interface{}
+	for k, v := range items {
+		keys = append(keys, k+" = ?")
+		vars = append(vars, v)
+	}
+	sql.WriteString(strings.Join(keys, ", "))
+
+	return sql.String(), vars
+
+}
+
+func _delete(values ...interface{}) (string, []interface{}) {
+	// DELETE FROM $tableName
+	return fmt.Sprintf("DELETE FROM %s", values[0]), []interface{}{}
+}
+
+func _count(values ...interface{}) (string, []interface{}) {
+	// SELECT COUNT(*) FROM $tableName
+	// 复用_select
+	return _select(values[0], []string{"COUNT(*)"})
 }

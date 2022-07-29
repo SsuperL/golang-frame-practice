@@ -12,6 +12,9 @@ const (
 	LIMIT
 	WHERE
 	ORDERBY
+	UPDATE
+	DELETE
+	COUNT
 )
 
 type Clause struct {
@@ -34,6 +37,11 @@ func (c *Clause) Set(typ Type, values ...interface{}) {
 func (c *Clause) Build(typs ...Type) (string, []interface{}) {
 	var sqls []string
 	var vars []interface{}
+	defer func() {
+		c.sql = nil
+		c.sqlVars = nil
+	}()
+
 	for _, typ := range typs {
 		if sql, ok := c.sql[typ]; ok {
 			sqls = append(sqls, sql)
