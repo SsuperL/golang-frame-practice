@@ -84,9 +84,9 @@ func main() {
 		logger.Error("failed to create engine")
 	}
 	session := engine.NewSession()
-	session.Exec("CREATE TABLE IF NOT EXISTS users(name text,age int);")
-	session.Exec("INSERT INTO users VALUES(?,?),(?,?);", "John", 13, "Amy", 15)
-	rows, err := session.Query("SELECT * FROM users;")
+	session.DB().Exec("CREATE TABLE IF NOT EXISTS users(name text,age int);")
+	session.DB().Exec("INSERT INTO users VALUES(?,?),(?,?);", "John", 13, "Amy", 15)
+	rows, err := session.DB().Query("SELECT * FROM users;")
 	if err != nil {
 		logger.Error(err.Error())
 	}

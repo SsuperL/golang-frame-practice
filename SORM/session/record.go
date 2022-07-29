@@ -11,6 +11,7 @@ import (
 func (s *Session) Insert(values ...interface{}) (int64, error) {
 	recordValues := make([]interface{}, 0)
 	for _, value := range values {
+		s.CallMethod(BeforeInsert, value)
 		// value为要映射的表实例
 		table := s.Model(value).GetRefTable()
 		s.clause.Set(clause.INSERT, table.Name, table.FieldNames)
@@ -23,6 +24,7 @@ func (s *Session) Insert(values ...interface{}) (int64, error) {
 		return 0, err
 	}
 
+	s.CallMethod(AfterInsert, nil)
 	return result.RowsAffected()
 }
 
@@ -33,6 +35,7 @@ func (s *Session) Insert(values ...interface{}) (int64, error) {
 func (s *Session) Find(values interface{}) error {
 	destSlice := reflect.Indirect(reflect.ValueOf(values))
 	destType := destSlice.Type().Elem()
+	s.CallMethod(BeforeQuery, nil)
 	table := s.Model(reflect.New(destType).Elem().Interface()).GetRefTable()
 
 	s.clause.Set(clause.SELECT, table.Name, table.FieldNames)
@@ -50,6 +53,7 @@ func (s *Session) Find(values interface{}) error {
 		if err := rows.Scan(values...); err != nil {
 			return err
 		}
+		s.CallMethod(AfterQuery, dest.Addr().Interface())
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
 
@@ -67,6 +71,7 @@ func (s *Session) Update(kvs ...interface{}) (int64, error) {
 			m[kvs[i].(string)] = kvs[i+1]
 		}
 	}
+	s.CallMethod(BeforeUpdate, nil)
 
 	s.clause.Set(clause.UPDATE, s.refTable.Name, m)
 	sql, vars := s.clause.Build(clause.UPDATE, clause.WHERE)
@@ -74,7 +79,7 @@ func (s *Session) Update(kvs ...interface{}) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
+	s.CallMethod(AfterUpdate, nil)
 	return result.RowsAffected()
 }
 

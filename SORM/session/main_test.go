@@ -9,6 +9,7 @@ import (
 func TestMain(m *testing.M) {
 	TestDB, _ = sql.Open("sqlite3", "./sorm.db")
 	TestDB.Exec("DROP TABLE IF EXISTS User;")
+	TestDB.Exec("DROP TABLE IF EXISTS Person;")
 	code := m.Run()
 	TestDB.Exec("DROP TABLE IF EXISTS User;")
 	_ = TestDB.Close()
