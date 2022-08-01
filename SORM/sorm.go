@@ -2,9 +2,11 @@ package sorm
 
 import (
 	"database/sql"
+	"fmt"
 	"sorm/dialect"
 	"sorm/logger"
 	"sorm/session"
+	"strings"
 
 	log "sorm/logger"
 )
@@ -77,4 +79,64 @@ func (engine *Engine) Transaction(fs TxFunc) (result interface{}, err error) {
 	}()
 
 	return fs(session)
+}
+
+// return difference a - b
+func difference(a, b []string) []string {
+	m := make(map[string]bool)
+	for _, v := range b {
+		m[v] = true
+	}
+
+	var diff []string
+	for _, v := range a {
+		if _, ok := m[v]; !ok {
+			diff = append(diff, v)
+		}
+	}
+
+	return diff
+}
+
+// Migrate only add columns and delete columns
+// delete columns 采用先创建临时表，临时表替换原表的方式实现
+// CREATE TABLE tmp AS SELECT field1, field2 ... FROM TABLE_SOURCE
+// DROP TABLE TABLE_SOURCE;
+// ALTER TABLE tmp RENAME TO TABLE_SOURCE;
+func (engine *Engine) Migrate(value interface{}) (err error) {
+	engine.Transaction(func(s *session.Session) (result interface{}, err error) {
+		if !s.Model(value).HasTable() {
+			logger.Infof("table %v not exists", s.Model(&value).GetRefTable().Name)
+			s.CreateTable()
+		}
+
+		table := s.GetRefTable()
+		rows, _ := s.Raw(fmt.Sprintf("SELECT * FROM %s LIMIT 1;", table.Name)).Query()
+		columns, _ := rows.Columns()
+		// add columns
+		addCols := difference(table.FieldNames, columns)
+		// delete columns
+		deleteCols := difference(columns, table.FieldNames)
+		logger.Infof("add cols %v ; delete cols %v", addCols, deleteCols)
+
+		for _, col := range addCols {
+			field := table.GetField(col)
+			if _, err = s.Raw(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", table.Name, field.Name, field.Type)).Exec(); err != nil {
+				return
+			}
+		}
+
+		if len(deleteCols) == 0 {
+			return
+		}
+
+		tmp := "tmp_" + table.Name
+		fieldStr := strings.Join(table.FieldNames, ", ")
+		s.Raw(fmt.Sprintf("CREATE TABLE %s AS SELECT %s FROM %s ;", tmp, fieldStr, table.Name))
+		s.Raw(fmt.Sprintf("DROP TABLE %s;", table.Name))
+		s.Raw(fmt.Sprintf("ALTER TABLE %s RENAME TO %s", tmp, table.Name))
+		_, err = s.Exec()
+		return
+	})
+	return err
 }

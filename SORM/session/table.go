@@ -48,8 +48,8 @@ func (s *Session) DropTable() error {
 }
 
 // HasTable check if table exists
-func (s *Session) HasTable(tableName string) bool {
-	sql, args := s.dialect.TableExistsSQL(tableName)
+func (s *Session) HasTable() bool {
+	sql, args := s.dialect.TableExistsSQL(s.refTable.Name)
 	row := s.Raw(sql, args...).QueryRow()
 	var tmp string
 	_ = row.Scan(&tmp)

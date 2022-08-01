@@ -11,7 +11,7 @@ func initTest(t *testing.T) *Session {
 	t.Helper()
 	session := NewSession()
 	session = session.Model(&User{})
-	if session.HasTable("User") {
+	if session.HasTable() {
 		session.DropTable()
 	}
 	err2 := session.CreateTable()

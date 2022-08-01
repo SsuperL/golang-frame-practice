@@ -15,11 +15,11 @@ type User struct {
 func TestSession_CreateTable(t *testing.T) {
 	session := NewSession()
 	session = session.Model(&User{})
-	if session.HasTable("User") {
+	if session.HasTable() {
 		session.DropTable()
 	}
 	session.CreateTable()
-	exists := session.HasTable("User")
+	exists := session.HasTable()
 	require.True(t, true, exists)
 }
 
@@ -28,6 +28,6 @@ func TestSession_HasTable(t *testing.T) {
 	session = session.Model(&User{})
 	session.Raw("DROP TABLE IF EXISTS User;").Exec()
 	session.CreateTable()
-	exists := session.HasTable("User")
+	exists := session.HasTable()
 	assert.True(t, exists)
 }

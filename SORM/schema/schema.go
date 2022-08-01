@@ -35,13 +35,24 @@ func (s *Schema) GetField(name string) *Field {
 	return s.FieldMap[name]
 }
 
+type ITableName interface {
+	TableName() string
+}
+
 // Parse 将任意对象解析为Schema实例
 func Parse(dest interface{}, dialector dialect.Dialector) *Schema {
 	// 入参是一个对象的指针，使用reflect.Indirect来获取指针指向的实例
 	modelType := reflect.Indirect(reflect.ValueOf(dest)).Type()
+	var tableName string
+	t, ok := dest.(ITableName)
+	if !ok {
+		tableName = modelType.Name()
+	} else {
+		tableName = t.TableName()
+	}
 	schema := &Schema{
 		Model:    dest,
-		Name:     modelType.Name(),
+		Name:     tableName,
 		FieldMap: make(map[string]*Field),
 	}
 
