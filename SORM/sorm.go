@@ -54,3 +54,27 @@ func (engine *Engine) Close() error {
 
 	return nil
 }
+
+// TxFunc ...
+type TxFunc func(s *session.Session) (interface{}, error)
+
+// Transaction ...
+func (engine *Engine) Transaction(fs TxFunc) (result interface{}, err error) {
+	session := engine.NewSession()
+	tx, err := session.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
+	return fs(session)
+}

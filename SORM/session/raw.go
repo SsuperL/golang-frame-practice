@@ -14,6 +14,7 @@ import (
 // Session session of the database
 type Session struct {
 	db      *sql.DB
+	tx      *sql.Tx
 	dialect dialect.Dialector
 	// table schema
 	refTable *schema.Schema
@@ -22,6 +23,16 @@ type Session struct {
 	// sql占位符对应的值
 	sqlVars []interface{}
 }
+
+// CommonDB commonDB interface
+type CommonDB interface {
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+var _ CommonDB = (*sql.DB)(nil)
+var _ CommonDB = (*sql.Tx)(nil)
 
 // New initiate db session
 func New(db *sql.DB, dialect dialect.Dialector) *Session {
@@ -32,10 +43,11 @@ func New(db *sql.DB, dialect dialect.Dialector) *Session {
 }
 
 // DB return *sql.DB
-func (s *Session) DB() *sql.DB {
-	// if s.db == nil {
+func (s *Session) DB() CommonDB {
+	if s.tx != nil {
+		return s.tx
+	}
 
-	// }
 	return s.db
 }
 
