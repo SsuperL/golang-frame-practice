@@ -2,12 +2,18 @@ package main
 
 import (
 	"ccache"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sorm"
 	"sorm/logger"
+	"surpc/codec"
+	"time"
+
+	"surpc"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -73,9 +79,7 @@ func ccacheRun() {
 	log.Fatal(http.ListenAndServe(peerList[port], peers))
 }
 
-func main() {
-	// ccacheRun()
-
+func ormRun() {
 	driver, source := "sqlite3", "sorm.db"
 	engine, err := sorm.NewEngine(driver, source)
 	defer engine.Close()
@@ -91,4 +95,47 @@ func main() {
 		logger.Error(err.Error())
 	}
 	fmt.Println(rows)
+}
+
+func startServer(addr chan string) {
+	lis, err := net.Listen("tcp", ":0")
+	if err != nil {
+		log.Fatal("Failed to listen err:", err)
+	}
+	log.Println("listening on ", lis.Addr().String())
+	addr <- lis.Addr().String()
+
+	surpc.Accept(lis)
+}
+
+func rpcRun() {
+	log.SetFlags(0)
+	addr := make(chan string)
+	go startServer(addr)
+
+	address := <-addr
+	conn, _ := net.Dial("tcp", address)
+	defer func() { _ = conn.Close() }()
+
+	time.Sleep(time.Second)
+	_ = json.NewEncoder(conn).Encode(surpc.DefaultOption)
+	cc := codec.NewGobCodec(conn)
+	for i := 0; i < 5; i++ {
+		h := &codec.Header{
+			ServiceMethod: "test",
+			Seq:           i,
+		}
+		_ = cc.Write(h, fmt.Sprintf("rpc request %d", h.Seq))
+		_ = cc.ReadHeader(h)
+		log.Println("response h :", h)
+		var reply string
+		_ = cc.ReadBody(&reply)
+		log.Println("reply:", reply)
+	}
+	time.Sleep(2 * time.Second)
+}
+
+func main() {
+	// ccacheRun()
+	rpcRun()
 }
