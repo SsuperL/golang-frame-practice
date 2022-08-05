@@ -2,7 +2,6 @@ package main
 
 import (
 	"ccache"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -10,7 +9,7 @@ import (
 	"net/http"
 	"sorm"
 	"sorm/logger"
-	"surpc/codec"
+	"sync"
 	"time"
 
 	"surpc"
@@ -114,25 +113,41 @@ func rpcRun() {
 	go startServer(addr)
 
 	address := <-addr
-	conn, _ := net.Dial("tcp", address)
-	defer func() { _ = conn.Close() }()
+	client, _ := surpc.Dial("tcp", address)
+	defer func() { _ = client.Close() }()
 
 	time.Sleep(time.Second)
-	_ = json.NewEncoder(conn).Encode(surpc.DefaultOption)
-	cc := codec.NewGobCodec(conn)
+	// _ = json.NewEncoder(conn).Encode(surpc.DefaultOption)
+	// cc := codec.NewGobCodec(conn)
+	// for i := 0; i < 5; i++ {
+	// 	h := &codec.Header{
+	// 		ServiceMethod: "test",
+	// 		Seq:           i,
+	// 	}
+	// 	_ = cc.Write(h, fmt.Sprintf("rpc request %d", h.Seq))
+	// 	_ = cc.ReadHeader(h)
+	// 	log.Println("response h :", h)
+	// 	var reply string
+	// 	_ = cc.ReadBody(&reply)
+	// 	log.Println("reply:", reply)
+	// }
+	// time.Sleep(2 * time.Second)
+
+	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
-		h := &codec.Header{
-			ServiceMethod: "test",
-			Seq:           i,
-		}
-		_ = cc.Write(h, fmt.Sprintf("rpc request %d", h.Seq))
-		_ = cc.ReadHeader(h)
-		log.Println("response h :", h)
-		var reply string
-		_ = cc.ReadBody(&reply)
-		log.Println("reply:", reply)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			args := fmt.Sprintf("rpc request %d", i)
+			var reply string
+			if err := client.Call("test", args, reply); err != nil {
+				log.Fatal("call test error: ", err)
+			}
+			log.Println("reply: ", reply)
+
+		}(i)
 	}
-	time.Sleep(2 * time.Second)
+	wg.Wait()
 }
 
 func main() {

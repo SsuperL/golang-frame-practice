@@ -87,7 +87,6 @@ func (s *Server) ServerCodec(cc codec.Codec) {
 	for {
 		// 读取请求
 		req, err := s.readRequest(cc)
-		log.Println("request:", req)
 		if err != nil {
 			if req == nil {
 				break
@@ -114,7 +113,6 @@ func Accept(lis net.Listener) {
 func (s *Server) readRequest(cc codec.Codec) (*request, error) {
 	// 读取请求头
 	h, err := s.readRequestHeader(cc)
-	fmt.Println("h:", h)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +136,6 @@ func (s *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 		}
 		return nil, err
 	}
-	fmt.Println("readHeader h:", h)
 	return &h, nil
 }
 

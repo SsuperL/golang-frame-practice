@@ -34,7 +34,7 @@ func TestGet(t *testing.T) {
 	loadCounts := make(map[string]int, len(db))
 	key := "A"
 	// 没有缓存的情况下
-	ccache := NewGroup("test", 2<<10, GetterFunc(
+	group := NewGroup("test", 2<<10, GetterFunc(
 		func(key string) ([]byte, error) {
 			if v, ok := db[key]; ok {
 				if _, exists := loadCounts[key]; !exists {
@@ -45,13 +45,18 @@ func TestGet(t *testing.T) {
 			}
 			return nil, nil
 		}))
+	peerList := map[int]string{
+		8001: "localhost:8081"}
 
-	value, err := ccache.Get(key)
+	peers := NewHTTPPoolWithOpts(peerList[8001], HTTPPoolOptions{})
+	group.RegisterPeers(peers)
+
+	value, err := group.Get(key)
 	assert.Equal(t, err, nil)
 	assert.Equal(t, db[key], value.String())
 	assert.Equal(t, 1, loadCounts[key])
 
 	// 已缓存
-	_, _ = ccache.Get(key)
+	_, _ = group.Get(key)
 	assert.Equal(t, 1, loadCounts[key])
 }
