@@ -7,7 +7,7 @@ type Header struct {
 	// ServiceMethod request method
 	ServiceMethod string
 	// Seq sequence number of request
-	Seq int
+	Seq uint64
 	Err string
 }
 

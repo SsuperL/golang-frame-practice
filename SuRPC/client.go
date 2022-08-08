@@ -1,6 +1,7 @@
 package surpc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,12 +10,13 @@ import (
 	"net"
 	"surpc/codec"
 	"sync"
+	"time"
 )
 
 // Call 进行调用的条件,方法必须对外可见
 // 包含两个参数，一个为参数，一个用于接收返回值
 type Call struct {
-	Seq           int
+	Seq           uint64
 	ServiceMethod string
 	Args          interface{}
 	Reply         interface{}
@@ -31,13 +33,13 @@ func (call *Call) done() {
 type Client struct {
 	cc  codec.Codec
 	opt *Option
-	seq int
+	seq uint64
 	// 互斥锁，用于保证请求的有序发送
 	sending sync.Mutex
 	mu      sync.Mutex
 	header  codec.Header
 	// 用于存放未处理完的请求，key是请求call.Seq，值是call实例
-	pending map[int]*Call
+	pending map[uint64]*Call
 	// closing和shutdown任一为true表示不可用，closing表示主动关闭
 	closing bool
 	// 表示出现故障，或者发生错误
@@ -67,20 +69,21 @@ func (c *Client) IsAvailable() bool {
 	return !c.shutdown && !c.closing
 }
 
-// 注册请求并返回client序列号seq
-func (c *Client) registerCall(call *Call) (int, error) {
+// 注册请求并返回call序列号Seq
+func (c *Client) registerCall(call *Call) (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.shutdown || c.closing {
 		return 0, ErrShutdown
 	}
 	// 注册未处理请求
+	call.Seq = c.seq
 	c.pending[call.Seq] = call
 	c.seq++
-	return c.seq, nil
+	return call.Seq, nil
 }
 
-func (c *Client) removeCall(seq int) *Call {
+func (c *Client) removeCall(seq uint64) *Call {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	call := c.pending[seq]
@@ -102,7 +105,7 @@ func (c *Client) terminateCalls(err error) {
 }
 
 // 接收响应
-func (c *Client) recieve() {
+func (c *Client) receive() {
 	var err error
 	for err == nil {
 		var h codec.Header
@@ -147,6 +150,7 @@ func NewClient(conn net.Conn, opt *Option) (*Client, error) {
 		return nil, err
 	}
 
+	// fmt.Println(opt)
 	return newCientCodec(f(conn), opt), nil
 
 }
@@ -156,9 +160,9 @@ func newCientCodec(cc codec.Codec, opt *Option) *Client {
 		cc:      cc,
 		opt:     opt,
 		seq:     1,
-		pending: make(map[int]*Call),
+		pending: make(map[uint64]*Call),
 	}
-	go client.recieve()
+	go client.receive()
 
 	return client
 }
@@ -182,14 +186,23 @@ func parseOptions(opts ...*Option) (*Option, error) {
 
 }
 
-// Dial 连接至具体服务端
-func Dial(network, addr string, opts ...*Option) (client *Client, err error) {
+type clientResult struct {
+	client *Client
+	err    error
+}
+
+type newClientFunc func(conn net.Conn, opt *Option) (client *Client, err error)
+
+// 超时机制，连接超时
+// 入参f为创建client的初始化函数NewClient
+func dialTimeout(f newClientFunc, network, addr string, opts ...*Option) (client *Client, err error) {
 	opt, err := parseOptions(opts...)
+	// fmt.Println(opt)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := net.Dial(network, addr)
+	conn, err := net.DialTimeout(network, addr, opt.ConnectTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +213,30 @@ func Dial(network, addr string, opts ...*Option) (client *Client, err error) {
 		}
 	}()
 
-	return NewClient(conn, opt)
+	ch := make(chan clientResult)
+	go func() {
+		client, err := f(conn, opt)
+		ch <- clientResult{client: client, err: err}
+	}()
+
+	if opt.ConnectTimeout == 0 {
+		result := <-ch
+		return result.client, result.err
+	}
+
+	select {
+	// 如果超时则返回错误
+	case <-time.After(opt.ConnectTimeout):
+		return nil, fmt.Errorf("rpc client: connect timeout, expected within %s", opt.ConnectTimeout)
+	case result := <-ch:
+		return result.client, result.err
+	}
+
+}
+
+// Dial 连接至具体服务端
+func Dial(network, addr string, opts ...*Option) (client *Client, err error) {
+	return dialTimeout(NewClient, network, addr, opts...)
 }
 
 // 发送请求
@@ -215,6 +251,7 @@ func (c *Client) send(call *Call) {
 		return
 	}
 
+	// request header
 	c.header.ServiceMethod = call.ServiceMethod
 	c.header.Seq = seq
 	c.header.Err = ""
@@ -247,8 +284,15 @@ func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Ca
 	return call
 }
 
-//Call 暴露给用户调用
-func (c *Client) Call(serviceMethod string, args, reply interface{}) error {
-	call := <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+// Call 暴露给用户调用
+// 使用context实现超时机制，context控制权交由用户
+func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+	call := c.Go(serviceMethod, args, reply, make(chan *Call, 1))
+	select {
+	case <-ctx.Done():
+		c.removeCall(call.Seq)
+		return errors.New("rpc client: call failed: " + ctx.Err().Error())
+	case call := <-call.Done:
+		return call.Error
+	}
 }

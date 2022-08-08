@@ -2,6 +2,7 @@ package main
 
 import (
 	"ccache"
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -97,6 +98,10 @@ func ormRun() {
 }
 
 func startServer(addr chan string) {
+	var foo Foo
+	if err := surpc.Register(&foo); err != nil {
+		log.Fatal("rpc: register error: ", err)
+	}
 	lis, err := net.Listen("tcp", ":0")
 	if err != nil {
 		log.Fatal("Failed to listen err:", err)
@@ -105,6 +110,14 @@ func startServer(addr chan string) {
 	addr <- lis.Addr().String()
 
 	surpc.Accept(lis)
+}
+
+type Foo struct{}
+type Args struct{ Arg1, Arg2 int }
+
+func (f Foo) Sum(args Args, res *int) error {
+	*res = args.Arg1 + args.Arg2
+	return nil
 }
 
 func rpcRun() {
@@ -134,20 +147,23 @@ func rpcRun() {
 	// time.Sleep(2 * time.Second)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	for i := 1; i < 5; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			args := fmt.Sprintf("rpc request %d", i)
-			var reply string
-			if err := client.Call("test", args, reply); err != nil {
+			args := &Args{Arg1: i, Arg2: i * i}
+			var res int
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+			err := client.Call(ctx, "Foo.Sum", args, &res)
+			if err != nil {
 				log.Fatal("call test error: ", err)
 			}
-			log.Println("reply: ", reply)
+			log.Printf("reply: %d + %d = %d", i, i*i, res)
 
 		}(i)
 	}
 	wg.Wait()
+	time.Sleep(2 * time.Second)
 }
 
 func main() {

@@ -14,4 +14,5 @@ require google.golang.org/protobuf v1.28.0 // indirect
 replace ccache => ./CCache
 
 replace sorm => ./SORM
+
 replace surpc => ./SuRPC
