@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"surpc/codec"
@@ -15,6 +16,11 @@ import (
 )
 
 const MagicNumber = 0x3bef5c
+const (
+	connected        = "200 connected to SuRPC"
+	defaultRPCPath   = "/_surpc_"
+	defaultDebugPath = "/debug/surpc"
+)
 
 // Option 用于协议协商，后续Header和Body由CodecType决定
 // | Option{MgicNumber: 1,CodecType:2} | Header{} | Body{} | Header{} | Body{} ...
@@ -66,16 +72,17 @@ func (s *Server) Accept(lis net.Listener) {
 }
 
 func (s *Server) ServeConn(conn io.ReadWriteCloser) {
+	defer func() { _ = conn.Close() }()
 	var option Option
 	// json解码获得Option
 	if err := json.NewDecoder(conn).Decode(&option); err != nil {
-		log.Println("Error decoding option, error: ", err)
+		fmt.Printf("option: %v \n", option)
+		log.Println("rpc server: decoding option, error: ", err)
 		return
 	}
-	// log.Println("option:", option)
 	// 校验magicnumber
 	if option.MagicNumber != MagicNumber {
-		log.Println("Wrong magicNumber, ", option.MagicNumber)
+		log.Println("rpc server: wrong magicNumber, ", option.MagicNumber)
 		return
 	}
 
@@ -176,7 +183,7 @@ func (s *Server) handleRequest(cc codec.Codec, req *request, h *codec.Header, se
 			return
 		}
 
-		s.sendResponse(cc, h, req.replyv.Interface(), sending)
+		s.sendResponse(cc, req.h, req.replyv.Interface(), sending)
 		sent <- struct{}{}
 	}()
 
@@ -227,15 +234,45 @@ func (s *Server) findService(serviceMethod string) (svc *service, mType *methodT
 	}
 	serviceName, methodName := serviceMethod[:dotIndex], serviceMethod[dotIndex+1:]
 
-	servicei, ok := s.serviceMap.Load(serviceName)
+	svci, ok := s.serviceMap.Load(serviceName)
 	if !ok {
 		err = errors.New("rpc server: can not find service: " + serviceName)
 		return
 	}
-	svc = servicei.(*service)
+	svc = svci.(*service)
 	mType = svc.method[methodName]
 	if mType == nil {
 		err = errors.New("rpc server: can not find method: " + methodName)
 	}
 	return
+}
+
+// ServeHTTP 接收客户端的HTTP请求，并转换为RPC请求
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "CONNECT" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		io.WriteString(w, "405 Method Not Allowed")
+		return
+	}
+	// 使用Hijacker接管（劫持）连接，调用后由调用者管理和关闭连接，net/http不再管理连接
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		log.Println("rpc hijacking ", r.RemoteAddr, ":", err.Error())
+		return
+	}
+
+	_, _ = io.WriteString(conn, " HTTP/1.0 "+connected+"\n\n")
+	fmt.Printf("conn: -- %v ", conn)
+	s.ServeConn(conn)
+}
+
+func (s *Server) HandleHTTP() {
+	http.Handle(defaultRPCPath, s)
+	http.Handle(defaultDebugPath, debugHTTP{s})
+	log.Println("rpc server debug path: ", defaultDebugPath)
+}
+
+func HandleHTTP() {
+	DefaultServer.HandleHTTP()
 }

@@ -1,6 +1,7 @@
 package surpc
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 	"surpc/codec"
 	"sync"
 	"time"
@@ -120,7 +123,9 @@ func (c *Client) receive() {
 			err = c.cc.ReadBody(nil)
 		case h.Err != "":
 			// reply包含错误信息
-			err = errors.New(h.Err)
+			call.Error = fmt.Errorf(h.Err)
+			err = c.cc.ReadBody(nil)
+			call.done()
 		default:
 			// 请求结果为正常响应
 			err = c.cc.ReadBody(call.Reply)
@@ -197,7 +202,7 @@ type newClientFunc func(conn net.Conn, opt *Option) (client *Client, err error)
 // 入参f为创建client的初始化函数NewClient
 func dialTimeout(f newClientFunc, network, addr string, opts ...*Option) (client *Client, err error) {
 	opt, err := parseOptions(opts...)
-	// fmt.Println(opt)
+	// fmt.Printf("dial opt: %v", opt)
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +285,7 @@ func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Ca
 		Done:          done,
 	}
 
+	// fmt.Printf("c: %#v \n", c)
 	c.send(call)
 	return call
 }
@@ -294,5 +300,41 @@ func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply int
 		return errors.New("rpc client: call failed: " + ctx.Err().Error())
 	case call := <-call.Done:
 		return call.Error
+	}
+}
+
+func NewHTTPClient(conn net.Conn, opt *Option) (*Client, error) {
+	io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", defaultRPCPath))
+
+	// 切换至RPC响应之前，需要接受HTTP响应
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
+	if err == nil && resp.Status == connected {
+		return NewClient(conn, opt)
+	}
+
+	if err == nil {
+		err = errors.New("unexpected HTTP response: " + resp.Status)
+	}
+
+	return nil, err
+}
+
+// DialHTTP 发起HTTP请求
+func DialHTTP(network, addr string, opts ...*Option) (*Client, error) {
+	return dialTimeout(NewHTTPClient, network, addr, opts...)
+}
+
+func XDial(rpcAddr string, opts ...*Option) (*Client, error) {
+	parts := strings.Split(rpcAddr, "@")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("rpc client err: wrong format '%s', expected protocol@addr", rpcAddr)
+	}
+
+	protocol, addr := parts[0], parts[1]
+	switch protocol {
+	case "http":
+		return DialHTTP("tcp", addr, opts...)
+	default:
+		return Dial(protocol, addr, opts...)
 	}
 }
