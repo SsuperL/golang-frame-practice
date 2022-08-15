@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sorm"
 	"sorm/logger"
+	"surpc/xclient"
 	"sync"
 	"time"
 
@@ -99,19 +100,19 @@ func ormRun() {
 
 func startServer(addr chan string) {
 	var foo Foo
-	lis, err := net.Listen("tcp", ":9090")
+	lis, err := net.Listen("tcp", ":0")
 	if err != nil {
 		log.Fatal("Failed to listen err:", err)
 	}
-	if err := surpc.Register(&foo); err != nil {
-		log.Fatal("rpc: register error: ", err)
-	}
-	log.Println("listening on ", lis.Addr().String())
-	surpc.HandleHTTP()
-	addr <- lis.Addr().String()
-	http.Serve(lis, nil)
 
-	// surpc.Accept(lis)
+	server := surpc.NewServer()
+	_ = server.Register(&foo)
+	log.Println("listening on ", lis.Addr().String())
+	// surpc.HandleHTTP()
+	addr <- lis.Addr().String()
+	// http.Serve(lis, nil)
+
+	server.Accept(lis)
 }
 
 type Foo struct{}
@@ -122,6 +123,65 @@ func (f Foo) Sum(args Args, res *int) error {
 	return nil
 }
 
+func (f Foo) Sleep(args Args, res *int) error {
+	time.Sleep(time.Second * time.Duration(args.Arg1))
+	*res = args.Arg1 + args.Arg2
+	return nil
+}
+
+func foo(ctx context.Context, xc *xclient.XClient, typ, serviceMethod string, args *Args) {
+	var reply int
+	var err error
+	switch typ {
+	case "call":
+		err = xc.Call(ctx, serviceMethod, args, &reply)
+	case "broadcast":
+		err = xc.Broadcast(ctx, serviceMethod, args, &reply)
+	}
+	if err != nil {
+		log.Printf("%s %s error: %v", typ, serviceMethod, err)
+	} else {
+		log.Printf("%s %s success: %d + %d = %d", typ, serviceMethod, args.Arg1, args.Arg2, reply)
+	}
+
+}
+
+func call(addr1, addr2 string) {
+	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+	xc := xclient.NewXClient(d, nil, xclient.RandomSelect)
+	defer func() {
+		_ = xc.Close()
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			foo(context.Background(), xc, "call", "Foo.Sum", &Args{Arg1: i, Arg2: i * i})
+		}(i)
+	}
+	wg.Wait()
+}
+func broadcast(addr1, addr2 string) {
+	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+	xc := xclient.NewXClient(d, nil, xclient.RandomSelect)
+	defer func() {
+		_ = xc.Close()
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			foo(context.Background(), xc, "broadcast", "Foo.Sum", &Args{Arg1: i, Arg2: i * i})
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
+			foo(ctx, xc, "broadcast", "Foo.Sum", &Args{Arg1: i, Arg2: i * i})
+		}(i)
+	}
+	wg.Wait()
+}
 func rpcRun(addr chan string) {
 	address := <-addr
 	client, _ := surpc.DialHTTP("tcp", address)
@@ -179,8 +239,17 @@ func rpcRun(addr chan string) {
 func main() {
 	// ccacheRun()
 	log.SetFlags(0)
-	ch := make(chan string)
-	go rpcRun(ch)
-	startServer(ch)
+	// ch := make(chan string)
+	// go rpcRun(ch)
+	ch1 := make(chan string)
+	ch2 := make(chan string)
+
+	go startServer(ch1)
+	go startServer(ch2)
+	addr1 := <-ch1
+	addr2 := <-ch2
+	time.Sleep(time.Second)
+	call(addr1, addr2)
+	broadcast(addr1, addr2)
 
 }
