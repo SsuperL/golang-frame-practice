@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sorm"
 	"sorm/logger"
+	"surpc/registry"
 	"surpc/xclient"
 	"sync"
 	"time"
@@ -146,8 +147,8 @@ func foo(ctx context.Context, xc *xclient.XClient, typ, serviceMethod string, ar
 
 }
 
-func call(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func call(registry string) {
+	d := xclient.NewSuRegistryDiscovery(registry, 0)
 	xc := xclient.NewXClient(d, nil, xclient.RandomSelect)
 	defer func() {
 		_ = xc.Close()
@@ -163,8 +164,8 @@ func call(addr1, addr2 string) {
 	}
 	wg.Wait()
 }
-func broadcast(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func broadcast(registry string) {
+	d := xclient.NewSuRegistryDiscovery(registry, 0)
 	xc := xclient.NewXClient(d, nil, xclient.RandomSelect)
 	defer func() {
 		_ = xc.Close()
@@ -236,20 +237,53 @@ func rpcRun(addr chan string) {
 	// time.Sleep(2 * time.Second)
 }
 
+func startRegistry(wg *sync.WaitGroup) {
+	l, _ := net.Listen("tcp", ":9999")
+	registry.HandleHTTP()
+	wg.Done()
+	http.Serve(l, nil)
+}
+
+func startServer1(registryPath string, wg *sync.WaitGroup) {
+	var foo Foo
+	lis, err := net.Listen("tcp", ":0")
+	if err != nil {
+		log.Fatal("Failed to listen err:", err)
+	}
+
+	server := surpc.NewServer()
+	_ = server.Register(&foo)
+	registry.Heartbeat(registryPath, "tcp@"+lis.Addr().String(), time.Minute)
+	wg.Done()
+	log.Println("listening on ", lis.Addr().String())
+	// surpc.HandleHTTP()
+	// http.Serve(lis, nil)
+
+	server.Accept(lis)
+}
 func main() {
 	// ccacheRun()
 	log.SetFlags(0)
-	// ch := make(chan string)
-	// go rpcRun(ch)
-	ch1 := make(chan string)
-	ch2 := make(chan string)
+	// ch1 := make(chan string)
+	// ch2 := make(chan string)
+	registryAddr := "http://localhost:9999/_surpc_/registry"
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go startRegistry(&wg)
+	wg.Wait()
+	// go startServer(ch1)
+	// go startServer(ch2)
 
-	go startServer(ch1)
-	go startServer(ch2)
-	addr1 := <-ch1
-	addr2 := <-ch2
+	// addr1 := <-ch1
+	// addr2 := <-ch2
 	time.Sleep(time.Second)
-	call(addr1, addr2)
-	broadcast(addr1, addr2)
+	wg.Add(2)
+	go startServer1(registryAddr, &wg)
+	go startServer1(registryAddr, &wg)
+
+	wg.Wait()
+	time.Sleep(time.Second)
+	call(registryAddr)
+	broadcast(registryAddr)
 
 }
